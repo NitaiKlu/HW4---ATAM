@@ -146,4 +146,6 @@ typedef struct {
 /* Macro for accessing the fields of st_other. */
 #define	ELF64_ST_VISIBILITY(oth)	((oth) & 0x3)
 
+
+
 #endif /* !_ELF64_H_ */
