@@ -19,21 +19,21 @@ for i in ${!src_file_arr[@]}; do
   fi
 done
 
-# gcc -fPIC -shared -std=c99 -w -o libtest_atam_hw3.so ./test_src_files/library.c
-# sudo mv libtest_atam_hw3.so /usr/lib/ > /dev/null
+gcc -fPIC -shared -std=c99 -w -o libtest_atam_hw3.so ./test_src_files/library.c
+sudo mv libtest_atam_hw3.so /usr/lib/ > /dev/null
 
-# echo "--------------------------------------"
+echo "--------------------------------------"
 
-# echo "Dynamic tests:"
-# for i in ${!src_file_arr[@]}; do
-#   gcc -no-pie -std=c99 -w -o out ./test_src_files/${src_file_arr[$i]} /usr/lib/libtest_atam_hw3.so -Wl,-zlazy
-#   ./prf ${target_func[$i]} out "DYNAMIC" "DYNAMIC" "DYNAMIC" "DYNAMIC" > ./results/res_dynamic_$i
-#   if diff -q ./results/res_dynamic_$i ./expected/exp_dynamic_$i > /dev/null;
-#   then 
-#     echo "Test $i passed" 
-#   else 
-#     echo "Test $i failed" 
-#   fi
-# done
+echo "Dynamic tests:"
+for i in ${!src_file_arr[@]}; do
+  gcc -no-pie -std=c99 -w -o out ./test_src_files/${src_file_arr[$i]} /usr/lib/libtest_atam_hw3.so -Wl,-zlazy
+  ./prf ${target_func[$i]} out "DYNAMIC" "DYNAMIC" "DYNAMIC" "DYNAMIC" > ./results/res_dynamic_$i
+  if diff -q ./results/res_dynamic_$i ./expected/exp_dynamic_$i > /dev/null;
+  then 
+    echo "Test $i passed" 
+  else 
+    echo "Test $i failed" 
+  fi
+done
 
 # rm out

@@ -1,0 +1,1 @@
+/usr/bin/gcc -g -rdynamic CMakeFiles/hw4_atam.dir/debugger.c.o -o hw4_atam 

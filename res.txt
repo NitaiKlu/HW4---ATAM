@@ -1,0 +1,9 @@
+4195500PRF first 3
+4195523PRF 
+
+To do:
+1. Free everywhere 
+    - make sure of return and exits as well
+    - macro
+2. change names and funcs
+    -debugger 

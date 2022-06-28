@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/student/Documents/atam/hw4/build",
+  "command": "/usr/bin/gcc   -g -std=gnu99 -o CMakeFiles/hw4_atam.dir/debugger.c.o -c /home/student/Documents/atam/hw4/debugger.c",
+  "file": "/home/student/Documents/atam/hw4/debugger.c"
+}
+]
