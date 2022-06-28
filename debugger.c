@@ -107,11 +107,8 @@ int findSymbol(FILE *file, const char *function, Elf64_Shdr *dynsym, Elf64_Sym *
     for (int i = 0; i < num_symbols; i++)
     {
         int n = fread(symbol, dynsym->sh_entsize, 1, file);
-        if (n != dynsym->sh_entsize)
-        {
-            // Could not read symbol en
+        if (n != dynsym->sh_entsize)// Could not read symbol en
             return -1;
-        }
         char *temp = string_section + symbol->st_name;
         if (!strcmp(temp, function))
         {
@@ -125,7 +122,7 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
     FILE *ElfFile = NULL;
     char *SectNames = NULL;
     Elf64_Sym elfSym;
-    Elf64_Ehdr elfHdr;
+    Elf64_Ehdr *elfHdr = (Elf64_Ehdr*)malloc(sizeof(Elf64_Ehdr));
     Elf64_Shdr sectHdr;
     Elf64_Shdr dynShdr;
     Elf64_Shdr relaShdr;
@@ -144,29 +141,33 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
         perror("[E] Error opening file:");
         exit(1);
     }
-    fread(&elfHdr, sizeof(Elf64_Ehdr), 1, ElfFile);
+    fseek(ElfFile, 0, SEEK_SET);
+    fread(elfHdr, sizeof(Elf64_Ehdr), 1, ElfFile);
 
     // stage 1 - executable
-    if (elfHdr.e_type != ET_EXEC)
+    if (elfHdr->e_type != ET_EXEC)
     {
         /* non-executable */
         printf("PRF:: %s not an executable! :(\n", program_name);
         exit(1);
     }
     printf("before get Headers\n");
-    getHeaders(ElfFile, &elfHdr, &SectNames);
+    getHeaders(ElfFile, elfHdr, &SectNames);
     printf("%s\n", SectNames);
     // stage 2 - looking for function
-    if (!readSectionHeader(ElfFile, &elfHdr, SectNames, ".symtab", symTabShdr))
+    if (!readSectionHeader(ElfFile, elfHdr, SectNames, ".symtab", symTabShdr))
     {
         printf("PRF:: %s not found! 1\n", function);
         exit(1);
     }
-    readSectionHeader(ElfFile, &elfHdr, SectNames, ".dynsym", &dynShdr);
-    readSectionHeader(ElfFile, &elfHdr, SectNames, ".strtab", &strTabShdr);
-    readSectionHeader(ElfFile, &elfHdr, SectNames, ".dynstr", &dynStrShdr);
-    readSectionHeader(ElfFile, &elfHdr, SectNames, ".rela.plt", &relaShdr);
+    // I THINK we should malloc every struct that use fread ?!
+    readSectionHeader(ElfFile, elfHdr, SectNames, ".dynsym", &dynShdr);
+    readSectionHeader(ElfFile, elfHdr, SectNames, ".strtab", &strTabShdr);
+    readSectionHeader(ElfFile, elfHdr, SectNames, ".dynstr", &dynStrShdr);
+    readSectionHeader(ElfFile, elfHdr, SectNames, ".rela.plt", &relaShdr);
    
+    free(ElfFile);
+
     Elf64_Sym function_sym;
     int flag = 0;
     int index_of_symbol;
@@ -190,15 +191,18 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
         exit(1);
     }
 
+    free(symTabShdr);
+
     // stage 3 - global symbol or not
     if (ELF64_ST_BIND(function_sym.st_info) != STB_GLOBAL)
     {
         printf("PRF:: %s is not a global symbol! :(\n", function);
         exit(1);
     }
+
     int index_in_dynsym = -1;
     // stage 4 - check if the function is defined in a section
-    if (function_sym.st_shndx != SHN_UNDEF)
+    if (function_sym.st_shndx == SHN_UNDEF)
     {
         // dynamically alocated.
         // stage 5 - find the ptr location
@@ -318,26 +322,35 @@ void debugger(pid_t child_pid, Elf64_Addr *address, int is_dynamic)
       
 }
 
+/*
+int main(int argc, char** argv) {
+	// argv[0] is me
+	printf("hello");
+    char* file_name = argv[2];
+    char* func_name = argv[1];
+	
+	
+    return 0;
+}
+*/
+
 
 int main(int argc, char **argv)
 {
-    pid_t child;
-    // if (argc != NUM_OF_ARGS)
-    // {
-    //     return 1;
-    // }
+    //pid_t child;
     
+    printf("before everything");
     char *function = (char *)malloc(sizeof(char) * MAX_SIZE);
     char *program = (char *)malloc(sizeof(char) * MAX_SIZE);
     strcpy(function, argv[1]);
     strcpy(program, argv[2]);
     Elf64_Addr *address = (Elf64_Addr *)malloc(sizeof(Elf64_Addr));
-    printf("before everything");
     int is_dynamic = check_data(program, function, address);
-    int child_pid = run_target(program, argv);
-    debugger(child_pid, address, is_dynamic);
-    free(function);
-    free(program);
-    free(address);
+    // int child_pid = run_target(program, argv);
+    // debugger(child_pid, address, is_dynamic);
+    // free(function);
+    // free(program);
+    // free(address);
+    
     return 0;
 }
