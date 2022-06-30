@@ -362,7 +362,7 @@ int main(int argc, char **argv)
     program = argv[2];
     Elf64_Addr *address = (Elf64_Addr *)malloc(sizeof(Elf64_Addr));
     int is_dynamic = check_data(program, function, address);
-    child_pid = run_target_not(program, argv);
+    child_pid = run_target(program, argv);
     debugger(child_pid, *address, is_dynamic);
     return 0;
 }
