@@ -7,3 +7,5 @@ To do:
     - macro
 2. change names and funcs
     -debugger 
+3. new bug of recursion
+4. try run with original elf.h

@@ -136,7 +136,7 @@ int findSymbol(FILE *file, const char *function, Elf64_Shdr *dynsym, Elf64_Sym *
     for (int i = 0; i < num_symbols; i++)
     {
         int n = read(fd, symbol, dynsym->sh_entsize);
-        if (n != dynsym->sh_entsize) 
+        if (n != dynsym->sh_entsize)
             return -1;
         char *temp = string_section + symbol->st_name;
         if (!strcmp(temp, function))
@@ -215,10 +215,13 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
 
         if (strcmp(strings + sym.st_name, function) == 0)
         {
-            index_of_symbol = idx;
             flag = 1;
+            index_of_symbol = idx;
             function_sym = sym;
-            break;
+            if (ELF64_ST_BIND(sym.st_info) == STB_GLOBAL)
+            {
+                break;
+            }
         }
     }
     if (!flag)
@@ -226,7 +229,6 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
         printf("PRF:: %s not found!\n", function);
         exit(1);
     }
-    
 
     // stage 3 - global symbol or not
     if (ELF64_ST_BIND(function_sym.st_info) != STB_GLOBAL)
@@ -277,7 +279,7 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
     {
         // st_value is the offset within st_shndx (the section index)
         *address = function_sym.st_value;
-        return 0; 
+        return 0;
     }
     free(ElfFile);
     free(symTabShdr);
@@ -288,7 +290,7 @@ void debugger(pid_t child_pid, Elf64_Addr address, int is_dynamic)
     int wait_status;
     struct user_regs_struct regs;
     unsigned long data, data_trap, next_instr, next_trap;
-    Elf64_Addr got_entry, next_addr, stack_addr;
+    Elf64_Addr got_entry, next_addr, stack_addr, base_address;
     int counter = 0;
 
     /* Wait for child to stop on its first instruction */
@@ -315,8 +317,9 @@ void debugger(pid_t child_pid, Elf64_Addr address, int is_dynamic)
     while (!WIFEXITED(wait_status))
     {
         counter++;
+        ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
+        base_address = regs.rsp + 8;
         // change the command back:
-        ptrace(PTRACE_GETREGS, child_pid, 0, &regs);
         regs.rip -= 1;
         ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
         ptrace(PTRACE_POKETEXT, child_pid, (void *)address, (void *)data);
@@ -331,7 +334,22 @@ void debugger(pid_t child_pid, Elf64_Addr address, int is_dynamic)
         // child run to next instr
         ptrace(PTRACE_CONT, child_pid, NULL, NULL);
         waitpid(child_pid, &wait_status, 0);
+        ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
+        while (regs.rsp != base_address)
+        {
+            regs.rip -= 1;
+            ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
+            ptrace(PTRACE_POKETEXT, child_pid, (void *)next_addr, (void *)next_instr);
+            ptrace(PTRACE_SINGLESTEP, child_pid, 0, 0);
+            if(waitpid(child_pid, &wait_status, 0) == -1)
+                exit(1);
+            ptrace(PTRACE_POKETEXT, child_pid, next_addr, next_trap);
+            ptrace(PTRACE_CONT, child_pid, NULL, NULL);
+            if(waitpid(child_pid, &wait_status, 0) == -1)
+                exit(1);
+            ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
 
+        }
         // ret val
         ptrace(PTRACE_GETREGS, child_pid, 0, &regs);
         unsigned long long return_value = regs.rax;
@@ -361,15 +379,15 @@ void debugger(pid_t child_pid, Elf64_Addr address, int is_dynamic)
 int main(int argc, char **argv)
 {
     pid_t child_pid;
-    char *function = (char*)malloc(sizeof(char)*MAX_SIZE);
+    char *function = (char *)malloc(sizeof(char) * MAX_SIZE);
     function = argv[1];
-    char *program = (char*)malloc(sizeof(char)*MAX_SIZE);
+    char *program = (char *)malloc(sizeof(char) * MAX_SIZE);
     program = argv[2];
     Elf64_Addr *address = (Elf64_Addr *)malloc(sizeof(Elf64_Addr));
     int is_dynamic = check_data(program, function, address);
     // printf("%ld", *address);
     child_pid = run_target_not(program, argv);
     debugger(child_pid, *address, is_dynamic);
-    
+
     return 0;
 }
