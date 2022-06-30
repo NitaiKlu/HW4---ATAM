@@ -11,12 +11,14 @@
 #define NUM_OF_ARGS 2
 #define MAX_SIZE 200
 
-int run_target(const char *program_name, char **argv)
+pid_t run_target(const char *program_name, char **argv)
 {
-    // printf("run target");
     pid_t child;
     child = fork();
-    if (child == 0) // childish about to get debuggggedddd
+
+    if (child > 0)
+        return child;
+    else if (child == 0)
     {
         if (ptrace(PTRACE_TRACEME, 0, NULL, NULL) < 0)
         {
@@ -25,105 +27,70 @@ int run_target(const char *program_name, char **argv)
         }
         execv(program_name, argv + 2);
     }
-    else if (child > 0)
-    {
-        // imma debug my childddd morty
-        return child;
-    }
     else
     {
-        // error
         perror("fork failed.");
         exit(1);
     }
 }
 
-pid_t run_target_not(const char *program_name, char **argv)
-{
-    pid_t pid;
-
-    pid = fork();
-
-    if (pid > 0)
-    {
-        return pid;
-    }
-    else if (pid == 0)
-    {
-        // Allow tracing of this process
-        if (ptrace(PTRACE_TRACEME, 0, NULL, NULL) < 0)
-        {
-            perror("ptrace");
-            exit(1);
-        }
-        // Replace this process's image with the given program
-        execv(program_name, argv + 2);
-    }
-    else
-    {
-        // fork error
-        perror("fork");
-        exit(1);
-    }
-}
-
-int readSectionHeader(FILE *file, Elf64_Ehdr *hdr, char *section_names, char *shdr_name,
-                      Elf64_Shdr *shdr_to_fill) // to change/////////////////////////////
+int readSectionHeader(FILE *file, Elf64_Ehdr *hdr, char *SectNames, char *shdr_name,
+                      Elf64_Shdr *sect_hdr) // to change/////////////////////////////
 {
     int fd = fileno(file);
-    // printf("section getting:%s", shdr_name);
     Elf64_Shdr *header = (Elf64_Shdr *)malloc(sizeof(Elf64_Shdr));
     lseek(fd, hdr->e_shoff, SEEK_SET);
-    int found = 0;
+    // int found = 0;  // remove this guy
     for (int i = 0; i < hdr->e_shnum; i++)
     {
         if (read(fd, header, sizeof(Elf64_Shdr)) != sizeof(Elf64_Shdr))
-            break; // Could not read section header
-        if (!strcmp(section_names + header->sh_name, shdr_name))
         {
-            memcpy(shdr_to_fill, header, sizeof(Elf64_Shdr));
-            found = 1;
-            break;
+            free(header);
+            return 0;
+        }
+        if (!strcmp(SectNames + header->sh_name, shdr_name))
+        {
+            memcpy(sect_hdr, header, sizeof(Elf64_Shdr));
+            free(header);
+            return 1;
         }
     }
     free(header);
-    return found;
+    return 0; // was 'found', check again guy
 }
 
-char *getString(FILE *file, Elf64_Shdr *Shdr)
+char *getString(FILE *file, Elf64_Shdr *header)
 {
     int fd = fileno(file);
-    lseek(fd, Shdr->sh_offset, SEEK_SET);
-    char *s = (char *)malloc(Shdr->sh_size);
-    int n = read(fd, s, Shdr->sh_size);
-    if (n != Shdr->sh_size)
+    lseek(fd, header->sh_offset, SEEK_SET);
+    char *str = (char *)malloc(header->sh_size);
+    if (read(fd, str, header->sh_size) != header->sh_size)
     {
-        // Could not read section
-        free(s);
+        free(str);
         return NULL;
     }
-    return s;
+    return str;
 }
 
 int getHeaders(FILE *file, Elf64_Ehdr *hdr, char **names)
 {
     int fd = fileno(file);
-    Elf64_Shdr *shdrs_strtab = (Elf64_Shdr *)malloc(sizeof(Elf64_Shdr));
+    Elf64_Shdr *strTabHdr = (Elf64_Shdr *)malloc(sizeof(Elf64_Shdr));
     // Go to section header table
     lseek(fd, hdr->e_shoff, SEEK_SET);
     // Get section header string table section header
     lseek(fd, hdr->e_shstrndx * sizeof(Elf64_Shdr), SEEK_CUR);
-    if (read(fd, shdrs_strtab, sizeof(Elf64_Shdr)) != sizeof(Elf64_Shdr))
+    if (read(fd, strTabHdr, sizeof(Elf64_Shdr)) != sizeof(Elf64_Shdr))
     {
-        free(shdrs_strtab);
+        free(strTabHdr);
         return 0; // could not load section header string table
     }
-    if ((*names = getString(file, shdrs_strtab)) == NULL)
+    if ((*names = getString(file, strTabHdr)) == NULL)
     {
-        free(shdrs_strtab);
+        free(strTabHdr);
         return 0;
     }
-    free(shdrs_strtab);
+    free(strTabHdr);
     return 1;
 }
 
@@ -132,8 +99,8 @@ int findSymbol(FILE *file, const char *function, Elf64_Shdr *dynsym, Elf64_Sym *
     int fd = fileno(file);
     lseek(fd, dynsym->sh_offset, SEEK_SET);
     symbol = (Elf64_Sym *)malloc(sizeof(Elf64_Sym *));
-    int num_symbols = dynsym->sh_size / dynsym->sh_entsize;
-    for (int i = 0; i < num_symbols; i++)
+    int num_of_symbols = dynsym->sh_size / dynsym->sh_entsize;
+    for (int i = 0; i < num_of_symbols; i++)
     {
         int n = read(fd, symbol, dynsym->sh_entsize);
         if (n != dynsym->sh_entsize)
@@ -247,6 +214,7 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
         dyn_str = getString(ElfFile, dynStrShdr);
         Elf64_Sym *dyn_sym_func = NULL;
         int dyn_index = findSymbol(ElfFile, function, dynShdr, dyn_sym_func, dyn_str);
+        // free(dyn_sym_func); // guy
         if (dyn_index < 0)
         {
             printf("PRF:: %s not found!\n", function);
@@ -254,18 +222,14 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
         }
 
         Elf64_Rela rela;
-        // Go to rela table
         lseek(fd, relaShdr->sh_offset, SEEK_SET);
-        // Look for func's symbol
-        int num_symbols = relaShdr->sh_size / relaShdr->sh_entsize;
-        for (int i = 0; i < num_symbols; i++)
+        // Look for func's symbol in rela plt
+        int num_of_symbols = relaShdr->sh_size / relaShdr->sh_entsize;
+        for (int i = 0; i < num_of_symbols; i++)
         {
             int n = read(fd, (void *)&rela, relaShdr->sh_entsize);
             if (n != relaShdr->sh_entsize)
-            {
-                // Could not read rela entry
                 return -1;
-            }
             int index = ELF64_R_SYM(rela.r_info);
             if (index == dyn_index)
             {
@@ -273,16 +237,19 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
             }
         }
         // The symbol is not in the symtab
+        free(ElfFile); // guy
+        free(symTabShdr); // guy
         return 1;
     }
     else
     {
         // st_value is the offset within st_shndx (the section index)
         *address = function_sym.st_value;
+        free(ElfFile); // guy
+        free(symTabShdr); // guy
         return 0;
     }
-    free(ElfFile);
-    free(symTabShdr);
+    
 }
 
 void debugger(pid_t child_pid, Elf64_Addr address, int is_dynamic)
@@ -386,8 +353,12 @@ int main(int argc, char **argv)
     Elf64_Addr *address = (Elf64_Addr *)malloc(sizeof(Elf64_Addr));
     int is_dynamic = check_data(program, function, address);
     // printf("%ld", *address);
-    child_pid = run_target_not(program, argv);
+    child_pid = run_target(program, argv);
     debugger(child_pid, *address, is_dynamic);
+
+    free(function);
+    free(program);
+    free(address);
 
     return 0;
 }
