@@ -1,14 +1,7 @@
 
 #ifndef _ELF64_H_
 #define _ELF64_H_ 1
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/types.h>
-#include <sys/ptrace.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <string.h>
-#include <sys/wait.h>
+
 #include <stdint.h>
 
 /*
@@ -152,7 +145,5 @@ typedef struct {
 
 /* Macro for accessing the fields of st_other. */
 #define	ELF64_ST_VISIBILITY(oth)	((oth) & 0x3)
-
-
 
 #endif /* !_ELF64_H_ */

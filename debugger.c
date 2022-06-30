@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 1
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -10,6 +11,17 @@
 #include <sys/wait.h>
 #define NUM_OF_ARGS 2
 #define MAX_SIZE 200
+
+#define FREE_ALL() free(ElfFile); \
+                    free(SectNames);\
+                    free(elfHdr); \
+                    free(sectHdr); \
+                    free(dynShdr); \
+                    free(relaShdr); \
+                    free(symTabShdr); \
+                    free(targetShdr); \
+                    free(strTabShdr); \
+                    free(dynStrShdr); 
 
 int run_target(const char *program_name, char **argv)
 {
@@ -144,6 +156,7 @@ int findSymbol(FILE *file, const char *function, Elf64_Shdr *dynsym, Elf64_Sym *
             return i;
         }
     }
+    return -1;
 }
 
 Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr *address)
@@ -281,16 +294,15 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
         *address = function_sym.st_value;
         return 0;
     }
-    free(ElfFile);
-    free(symTabShdr);
+    FREE_ALL()
 }
 
 void debugger(pid_t child_pid, Elf64_Addr address, int is_dynamic)
 {
     int wait_status;
     struct user_regs_struct regs;
-    unsigned long data, data_trap, next_instr, next_trap;
-    Elf64_Addr got_entry, next_addr, stack_addr, base_address;
+    unsigned long data, first_trap, next_instruction, second_trap;
+    Elf64_Addr got_entry, next_address, stack_address, base_address;
     int counter = 0;
 
     /* Wait for child to stop on its first instruction */
@@ -306,8 +318,8 @@ void debugger(pid_t child_pid, Elf64_Addr address, int is_dynamic)
     data = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)address, NULL);
 
     /* Write the trap instruction 'int 3' into the address */
-    data_trap = (data & 0xFFFFFFFFFFFFFF00) | 0xCC;
-    ptrace(PTRACE_POKETEXT, child_pid, (void *)address, (void *)data_trap);
+    first_trap = (data & 0xFFFFFFFFFFFFFF00) | 0xCC;
+    ptrace(PTRACE_POKETEXT, child_pid, (void *)address, (void *)first_trap);
 
     /* Let the child run to the breakpoint and wait for it to reach it */
     ptrace(PTRACE_CONT, child_pid, NULL, NULL);
@@ -324,12 +336,12 @@ void debugger(pid_t child_pid, Elf64_Addr address, int is_dynamic)
         ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
         ptrace(PTRACE_POKETEXT, child_pid, (void *)address, (void *)data);
         // next cmd:
-        stack_addr = regs.rsp;
-        next_addr = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)stack_addr, NULL);
+        stack_address = regs.rsp;
+        next_address = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)stack_address, NULL);
         // Add break point at return addres
-        next_instr = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)next_addr, NULL);
-        next_trap = (next_instr & 0xFFFFFFFFFFFFFF00) | 0xCC;
-        ptrace(PTRACE_POKETEXT, child_pid, (void *)next_addr, (void *)next_trap);
+        next_instruction = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)next_address, NULL);
+        second_trap = (next_instruction & 0xFFFFFFFFFFFFFF00) | 0xCC;
+        ptrace(PTRACE_POKETEXT, child_pid, (void *)next_address, (void *)second_trap);
 
         // child run to next instr
         ptrace(PTRACE_CONT, child_pid, NULL, NULL);
@@ -339,11 +351,11 @@ void debugger(pid_t child_pid, Elf64_Addr address, int is_dynamic)
         {
             regs.rip -= 1;
             ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
-            ptrace(PTRACE_POKETEXT, child_pid, (void *)next_addr, (void *)next_instr);
+            ptrace(PTRACE_POKETEXT, child_pid, (void *)next_address, (void *)next_instruction);
             ptrace(PTRACE_SINGLESTEP, child_pid, 0, 0);
             if(waitpid(child_pid, &wait_status, 0) == -1)
                 exit(1);
-            ptrace(PTRACE_POKETEXT, child_pid, next_addr, next_trap);
+            ptrace(PTRACE_POKETEXT, child_pid, next_address, second_trap);
             ptrace(PTRACE_CONT, child_pid, NULL, NULL);
             if(waitpid(child_pid, &wait_status, 0) == -1)
                 exit(1);
@@ -355,22 +367,19 @@ void debugger(pid_t child_pid, Elf64_Addr address, int is_dynamic)
         unsigned long long return_value = regs.rax;
         printf("PRF:: run #%d returned with %lld\n", counter, return_value);
 
-        // Remove the second breakpoint by restoring the previous data
+        // remove bp 
         regs.rip -= 1;
         ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
-        ptrace(PTRACE_POKETEXT, child_pid, (void *)next_addr, (void *)next_instr);
+        ptrace(PTRACE_POKETEXT, child_pid, (void *)next_address, (void *)next_instruction);
 
-        // add the first breakpoint
+        // first bp
         if (is_dynamic && counter == 1)
         {
-            // Now the data in the GOT entry is symbol's addres
             address = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)got_entry, NULL);
             data = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)address, NULL);
-            data_trap = (data & 0xFFFFFFFFFFFFFF00) | 0xCC;
+            first_trap = (data & 0xFFFFFFFFFFFFFF00) | 0xCC;
         }
-        ptrace(PTRACE_POKETEXT, child_pid, (void *)address, (void *)data_trap);
-
-        // Let the child run to the breakpoint and wait for it to reach it
+        ptrace(PTRACE_POKETEXT, child_pid, (void *)address, (void *)first_trap);
         ptrace(PTRACE_CONT, child_pid, NULL, NULL);
         waitpid(child_pid, &wait_status, 0);
     }
@@ -385,9 +394,7 @@ int main(int argc, char **argv)
     program = argv[2];
     Elf64_Addr *address = (Elf64_Addr *)malloc(sizeof(Elf64_Addr));
     int is_dynamic = check_data(program, function, address);
-    // printf("%ld", *address);
     child_pid = run_target_not(program, argv);
     debugger(child_pid, *address, is_dynamic);
-
     return 0;
 }
