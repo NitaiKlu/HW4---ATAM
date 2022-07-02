@@ -145,13 +145,12 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
     int wait_status;
 
     // read ELF header, first thing in the file
-    ElfFile = fopen("/home/student/Documents/atam/hw4/out", "rw");
-    int fd = fileno(ElfFile);
+    ElfFile = fopen(program_name, "rw");
     if (ElfFile == NULL)
     {
-        perror("[E] Error opening file:");
         exit(1);
     }
+    int fd = fileno(ElfFile);
     if (read(fd, elfHdr, sizeof(*elfHdr)) != sizeof(*elfHdr))
         exit(1);
     if (memcmp("\x7f\x45\x4c\x46", elfHdr, 4))
@@ -165,7 +164,7 @@ Elf64_Addr check_data(const char *program_name, const char *function, Elf64_Addr
     {
         /* non-executable */
         printf("PRF:: %s not an executable! :(\n", program_name);
-        exit(1);
+        exit(0);
     }
 
     getHeaders(ElfFile, elfHdr, &SectNames);
@@ -332,8 +331,9 @@ void debugger(pid_t child_pid, Elf64_Addr address, int is_dynamic)
         }
         // ret val
         ptrace(PTRACE_GETREGS, child_pid, 0, &regs);
-        unsigned long long return_value = regs.rax;
-        printf("PRF:: run #%d returned with %lld\n", counter, return_value);
+        int return_value;
+        return_value = (0x80000000 & regs.rax) ? (-((~regs.rax) + 1)) : regs.rax;
+        printf("PRF:: run #%d returned with %d\n", counter, return_value);
 
         // remove bp 
         regs.rip -= 1;
